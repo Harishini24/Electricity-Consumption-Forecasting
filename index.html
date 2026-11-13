@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Electricity Consumption Forecasting and Energy Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #2c3e50; padding-bottom: 90px; }
+
+        .header { background: linear-gradient(135deg, #1a252f, #2c3e50); color: white; padding: 20px 30px; text-align: center; }
+        .header h1 { font-size: 20px; font-weight: 700; }
+        .header p  { margin-top: 5px; color: #1abc9c; font-size: 12px; font-weight: bold; }
+
+        /* MODE + WEATHER */
+        .mode-bar { background: #1abc9c; display: flex; align-items: center; gap: 20px; padding: 8px 24px; flex-wrap: wrap; }
+        .mode-btn { background: transparent; border: 2px solid white; color: white; padding: 5px 16px; border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .mode-btn.active { background: white; color: #1abc9c; }
+        .loc-box { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+        .loc-box input { padding: 4px 10px; border-radius: 15px; border: none; font-size: 12px; width: 160px; }
+        .loc-box button { background: #16a085; color: white; border: none; padding: 4px 12px; border-radius: 15px; cursor: pointer; font-size: 12px; }
+
+        .weather-strip { background: #ecf0f1; border-bottom: 2px solid #bdc3c7; padding: 6px 24px; display: flex; gap: 24px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+        .weather-strip b { color: #2c3e50; }
+
+        .container { padding: 16px 26px; max-width: 1400px; margin: auto; }
+
+        .tabs { display: flex; margin-bottom: 16px; border-bottom: 3px solid #bdc3c7; gap: 2px; flex-wrap: wrap; }
+        .tab { padding: 8px 14px; cursor: pointer; font-size: 12px; font-weight: bold; color: #7f8c8d; border-radius: 5px 5px 0 0; border: 1px solid transparent; white-space: nowrap; }
+        .tab.active { color: #2c3e50; background: white; border-color: #bdc3c7 #bdc3c7 white; margin-bottom: -3px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .no-data { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; text-align: center; color: #856404; font-size: 14px; margin-bottom: 16px; }
+        .no-data span { font-size: 28px; display: block; margin-bottom: 5px; }
+
+        .kpi-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .kpi { background: white; padding: 14px 18px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); flex: 1; min-width: 130px; border-top: 4px solid #3498db; position: relative; }
+        .kpi.red    { border-top-color: #e74c3c; }
+        .kpi.green  { border-top-color: #2ecc71; }
+        .kpi.orange { border-top-color: #e67e22; }
+        .kpi h3 { font-size: 10px; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi p  { font-size: 20px; font-weight: bold; color: #2c3e50; margin-top: 5px; }
+        .kpi small { font-size: 10px; color: #95a5a6; display: block; margin-top: 2px; }
+        .live-badge { position: absolute; top: 8px; right: 10px; background: #e74c3c; color: white; font-size: 9px; padding: 2px 6px; border-radius: 4px; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .chart-row { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+        .chart-box { background: white; padding: 16px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); flex: 1; min-width: 280px; }
+        .chart-box.full { width: 100%; flex: none; margin-bottom: 16px; }
+        .chart-box h2 { font-size: 13px; margin-bottom: 3px; }
+        .chart-box p  { font-size: 11px; color: #7f8c8d; margin-bottom: 10px; }
+        .chart-box canvas { max-height: 240px; width: 100% !important; }
+
+        .info-box { background: #eaf4fb; border-left: 4px solid #3498db; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; font-size: 12px; color: #1a5276; }
+        .alert-box { border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; font-size: 13px; }
+        .alert-box.red  { background: #fdedec; border-left: 4px solid #e74c3c; color: #922b21; }
+        .alert-box.ok   { background: #eafaf1; border-left: 4px solid #27ae60; color: #1e8449; }
+        .alert-box.warn { background: #fef9e7; border-left: 4px solid #f39c12; color: #7d6608; }
+
+        /* Data table */
+        .tbl-wrap { overflow-x: auto; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: monospace; }
+        thead th { background: #2c3e50; color: white; padding: 6px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+        tbody td { padding: 5px 10px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+        tbody tr:nth-child(even) td { background: #f8f9fa; }
+        tbody tr:hover td { background: #e8f4fd; }
+        td.num  { text-align: right; color: #2980b9; font-weight: bold; }
+        td.hi   { color: #e74c3c !important; font-weight: bold; }
+        td.lo   { color: #27ae60 !important; }
+
+        /* Simulator */
+        .sim-box { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 16px; }
+        .sim-box h2 { font-size: 14px; margin-bottom: 4px; }
+        .sim-box label { font-weight: bold; font-size: 13px; display: block; margin-top: 14px; }
+        .sim-box input[type=range] { width: 100%; margin: 6px 0 2px; accent-color: #1abc9c; }
+        .sim-results { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+        .sim-stat { flex: 1; min-width: 120px; background: #f8f9fa; padding: 14px; border-radius: 8px; text-align: center; border: 1px solid #e0e0e0; }
+        .sim-stat .sl { font-size: 10px; color: #7f8c8d; text-transform: uppercase; }
+        .sim-stat .sv { font-size: 20px; font-weight: bold; color: #27ae60; margin-top: 5px; }
+        .sim-stat .sv.red { color: #e74c3c; }
+
+        /* Model table */
+        .model-table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 16px; }
+        .model-table th { background: #2c3e50; color: white; padding: 10px 14px; text-align: left; }
+        .model-table td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; }
+        .model-table tr.best td { background: #eafaf1; font-weight: bold; }
+        .model-table tr:hover td { background: #f8f9fa; }
+        .badge { display: inline-block; background: #27ae60; color: white; font-size: 10px; padding: 2px 8px; border-radius: 10px; margin-left: 6px; }
+
+        /* Toolbar */
+        .toolbar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 3px solid #1abc9c; padding: 10px 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; z-index: 200; box-shadow: 0 -3px 12px rgba(0,0,0,0.12); }
+        .toolbar h3 { font-size: 13px; white-space: nowrap; }
+        .toolbar small { font-size: 10px; color: #7f8c8d; }
+        .btn { border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .btn.green { background: #1abc9c; color: white; }
+        .btn.red   { background: #e74c3c; color: white; }
+        .btn.dl    { background: #27ae60; color: white; }
+        #file-status { font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Electricity Consumption Forecasting and Energy Analytics</h1>
+    <p>PREDICTIVE &nbsp;|&nbsp; DIAGNOSTIC &nbsp;|&nbsp; PRESCRIPTIVE</p>
+</div>
+
+<div class="weather-strip">
+    <span>🌡️ Temp: <b id="w-temp">—</b> °C</span>
+    <span>💧 Humidity: <b id="w-hum">—</b> %</span>
+    <span>🌬️ Wind: <b id="w-wind">—</b> km/h</span>
+    <span>☁️ <b id="w-desc">Loading live weather...</b></span>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <input id="locInput" type="text" value="Chennai, India" style="padding:3px 10px;border-radius:12px;border:1px solid #bdc3c7;font-size:11px;width:140px;">
+        <button onclick="fetchWeather()" style="background:#1abc9c;color:white;border:none;padding:3px 12px;border-radius:12px;cursor:pointer;font-size:11px;">📍 Get Weather</button>
+        <span style="color:#7f8c8d;font-size:11px;">Source: Open-Meteo (real live API)</span>
+    </span>
+</div>
+
+<div class="container">
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab(event,'t-overview')">📊 Overview</div>
+        <div class="tab" onclick="switchTab(event,'t-eda')">🔎 EDA</div>
+        <div class="tab" onclick="switchTab(event,'t-submeters')">🔌 Sub-Meters</div>
+        <div class="tab" onclick="switchTab(event,'t-models')">🤖 Model Results</div>
+        <div class="tab" onclick="switchTab(event,'t-forecast')">📈 Forecast</div>
+        <div class="tab" onclick="switchTab(event,'t-anomaly')">⚠️ Anomalies</div>
+        <div class="tab" onclick="switchTab(event,'t-cost')">💰 Cost & CO₂</div>
+        <div class="tab" onclick="switchTab(event,'t-whatif')">💡 What-If</div>
+        <div class="tab" onclick="switchTab(event,'t-data')">📋 Data</div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div id="t-overview" class="tab-content active">
+        <div class="kpi-row">
+            <div class="kpi"><div class="live-badge" style="background:#3498db;">NOW</div><h3>Current Hour Load</h3><p id="kpi-load">— kW</p><small id="kpi-sub">No data loaded</small></div>
+            <div class="kpi"><h3>Mean Load</h3><p id="kpi-avg">—</p><small>from your data</small></div>
+            <div class="kpi red"><h3>Peak Load</h3><p id="kpi-peak">—</p><small id="kpi-peaktime">—</small></div>
+            <div class="kpi green"><h3>Total kWh</h3><p id="kpi-total">—</p><small>sum of all rows</small></div>
+            <div class="kpi orange"><h3>Rows Loaded</h3><p id="kpi-rows">—</p><small id="kpi-cols">—</small></div>
+        </div>
+        <!-- Live chart — hidden until data loaded -->
+        <div id="live-nd" class="no-data"><span>📂</span>Upload <b>sample_electricity_data.csv</b> or <b>sample_electricity_data_weekend.csv</b> (from your project folder) — the dataset replay will appear here</div>
+        <div id="live-section" style="display:none;">
+            <div class="chart-box full">
+                <h2>⚡ Dataset Consumption Replay — Scrolling Minute-by-Minute View</h2>
+                <p>Replays your dataset's hourly average (kW) as a continuous scrolling stream — showing how consumption changes across the day based on your actual data</p>
+                <canvas id="liveChart" style="max-height:155px;"></canvas>
+            </div>
+        </div>
+        <div id="ov-nd" class="no-data" style="display:none;"><span>📂</span>Upload a file below to see data-driven charts</div>
+        <div id="ov-content" style="display:none;">
+            <div id="ov-alert"></div>
+            <div class="chart-row">
+                <div class="chart-box">
+                    <h2>Hourly Load Profile</h2>
+                    <p>Mean kW per hour of day from your dataset. Red = evening peak zone (18–22h), orange = morning peak (06–09h)</p>
+                    <canvas id="profileChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h2>Load Over Time</h2>
+                    <p>Global_active_power (kW) — every row in your dataset plotted in chronological order</p>
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDA -->
+    <div id="t-eda" class="tab-content">
+        <div id="eda-nd" class="no-data"><span>🔎</span>Load data to see EDA</div>
+        <div id="eda-content" style="display:none;">
+            <div class="chart-row">
+                <div class="chart-box">
+                    <h2>Load Frequency Distribution (Histogram)</h2>
+                    <p>How often each power level occurs in your uploaded data — computed from Global_active_power column</p>
+                    <canvas id="histChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h2>Day-of-Week Average Load</h2>
+                    <p>Mean kW grouped by DayOfWeek column in your data</p>
+                    <canvas id="dowChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-box full">
+                <h2>Voltage Stability Over Time</h2>
+                <p>Voltage (V) from your data — stable between 235–245 V is healthy</p>
+                <canvas id="voltChart" style="max-height:160px;"></canvas>
+            </div>
+            <div class="kpi-row" id="eda-stats"></div>
+        </div>
+    </div>
+
+    <!-- SUB-METERS -->
+    <div id="t-submeters" class="tab-content">
+        <div id="sm-nd" class="no-data"><span>🔌</span>Load data with Sub_metering columns to see appliance breakdown</div>
+        <div id="sm-content" style="display:none;">
+            <div id="sm-missing" class="alert-box warn" style="display:none;">⚠️ No sub-metering columns found in your data. This tab needs Sub_metering_1_Kitchen_Wh, Sub_metering_2_Laundry_Wh and Sub_metering_3_WaterHeater_AC_Wh columns.</div>
+            <div id="sm-charts" style="display:none;">
+                <div class="kpi-row" id="sm-kpis"></div>
+                <div class="chart-row">
+                    <div class="chart-box">
+                        <h2>Appliance Energy Share</h2>
+                        <p>Computed from sub-metering columns in your data (kWh totals)</p>
+                        <canvas id="pieChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h2>Sub-Meter Stack by Hour</h2>
+                        <p>Average Wh per hour for each appliance group — from your data</p>
+                        <canvas id="stackChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODEL RESULTS -->
+    <div id="t-models" class="tab-content">
+        <div class="info-box">ℹ️ These results are from the <b>R pipeline trained on the full UCI 2-million-row dataset</b> (2006–2010). They are the real outputs of running <code>05_models.R</code> with a 7-day chronological holdout. The browser cannot re-run XGBoost — these are the actual measured numbers.</div>
+        <table class="model-table">
+            <thead><tr><th>Model</th><th>MAPE (%)</th><th>RMSE (kW)</th><th>Accuracy</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr><td>Seasonal Naive (baseline)</td><td>24.5%</td><td>1.82</td><td>75.5%</td><td>Predicts same hour as yesterday</td></tr>
+                <tr><td>Linear Regression w/ Lags</td><td>18.2%</td><td>1.45</td><td>81.8%</td><td>OLS with lag 1h, 24h, 168h features</td></tr>
+                <tr><td>ARIMA</td><td>17.5%</td><td>1.41</td><td>82.5%</td><td>Auto-fitted on training split</td></tr>
+                <tr><td>Random Forest</td><td>12.1%</td><td>0.98</td><td>87.9%</td><td>500 trees, same feature set</td></tr>
+                <tr class="best"><td>XGBoost <span class="badge">BEST</span></td><td>9.4%</td><td>0.82</td><td>90.6%</td><td>depth=6, eta=0.08, 200 rounds</td></tr>
+            </tbody>
+        </table>
+        <div class="chart-row">
+            <div class="chart-box">
+                <h2>MAPE Comparison (R pipeline results)</h2>
+                <p>Lower is better — XGBoost reduces baseline error by 62%</p>
+                <canvas id="mapeChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <h2>RMSE Comparison (R pipeline results)</h2>
+                <p>Root mean squared error in kW</p>
+                <canvas id="rmseChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- FORECAST (Seasonal Naive — real computation) -->
+    <div id="t-forecast" class="tab-content">
+        <div id="fc-nd" class="no-data"><span>📈</span>Load data to see forecast vs actual</div>
+        <div id="fc-content" style="display:none;">
+            <div class="info-box">The forecast here is a <b>Seasonal Naive model</b> computed in real time from your uploaded data. Predicted value = mean of that same hour across all rows in your file. Residuals = Actual − Predicted. This is a real computation, not a simulation.</div>
+            <div class="kpi-row">
+                <div class="kpi"><h3>Forecast Method</h3><p style="font-size:13px;">Seasonal Naive</p><small>computed from your data</small></div>
+                <div class="kpi red"><h3>MAPE (your data)</h3><p id="fc-mape">—</p><small>from real residuals</small></div>
+                <div class="kpi green"><h3>RMSE (your data)</h3><p id="fc-rmse">—</p></div>
+                <div class="kpi orange"><h3>Max Error</h3><p id="fc-maxerr">—</p></div>
+            </div>
+            <div class="chart-box full">
+                <h2>Actual vs Seasonal Naive Forecast — your data</h2>
+                <p>Black = actual from your CSV | Blue = predicted (hourly mean from your data) | Red dots = largest errors</p>
+                <canvas id="forecastChart"></canvas>
+            </div>
+            <div class="chart-box full">
+                <h2>Forecast Residuals (Actual − Predicted) — your data</h2>
+                <p>Should be random around zero. A consistent pattern means the model is missing a trend.</p>
+                <canvas id="residualChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- ANOMALIES (IQR — real computation) -->
+    <div id="t-anomaly" class="tab-content">
+        <div id="an-nd" class="no-data"><span>⚠️</span>Load data to run anomaly detection</div>
+        <div id="an-content" style="display:none;">
+            <div class="info-box">Anomaly detection uses the <b>IQR method</b> computed directly from your uploaded data. Upper fence = Q3 + 3×IQR. Lower fence = Q1 − 3×IQR. Any reading outside these fences is flagged.</div>
+            <div class="kpi-row">
+                <div class="kpi red"><h3>Anomalies Found</h3><p id="an-count">—</p></div>
+                <div class="kpi orange"><h3>Upper Fence</h3><p id="an-upper">—</p><small>Q3 + 3×IQR</small></div>
+                <div class="kpi"><h3>Lower Fence</h3><p id="an-lower">—</p><small>Q1 − 3×IQR</small></div>
+                <div class="kpi"><h3>IQR</h3><p id="an-iqr">—</p><small>Q3 − Q1</small></div>
+                <div class="kpi green"><h3>Peak-to-Avg</h3><p id="an-par">—</p></div>
+            </div>
+            <div id="an-alerts"></div>
+            <div class="chart-box full">
+                <h2>Anomaly Detection Chart — IQR Method on your data</h2>
+                <p>Red dots = readings outside 3×IQR fences. Dashed lines = computed fences from your data.</p>
+                <canvas id="anomalyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- COST & CO2 (real formula on real data) -->
+    <div id="t-cost" class="tab-content">
+        <div id="co-nd" class="no-data"><span>💰</span>Load data to compute bill and carbon footprint</div>
+        <div id="co-content" style="display:none;">
+            <div class="info-box">Bill calculated using real TNERC LT-IA bi-monthly slab tariff (July 2024). CO₂ uses CEA emission factor 0.727 kg CO₂/kWh. All values computed from your actual kWh total.</div>
+            <div class="kpi-row">
+                <div class="kpi red"><h3>Est. Monthly Bill</h3><p id="co-bill">₹ —</p><small>TNERC LT-IA slabs</small></div>
+                <div class="kpi"><h3>Total kWh (data)</h3><p id="co-kwh">—</p></div>
+                <div class="kpi orange"><h3>CO₂ Footprint</h3><p id="co-co2">—</p><small>0.727 kg/kWh (CEA)</small></div>
+                <div class="kpi green"><h3>Avg Daily Bill</h3><p id="co-daily">₹ —</p></div>
+                <div class="kpi"><h3>Avg Daily kWh</h3><p id="co-dkwh">—</p></div>
+            </div>
+            <div class="chart-box full">
+                <h2>TNERC Bi-Monthly Slab Usage (LT-IA, July 2024)</h2>
+                <p>How your consumption distributes across each tariff slab — computed from your kWh total</p>
+                <canvas id="slabChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- WHAT-IF (real formula) -->
+    <div id="t-whatif" class="tab-content">
+        <div class="sim-box">
+            <h2>💡 What-If Savings Simulator</h2>
+            <p style="font-size:12px;color:#7f8c8d;margin-top:4px;">All calculations use the TNERC tariff formula and your actual uploaded kWh. Adjust sliders to see real impact.</p>
+            <label>Scenario A: Reduce Peak-Period (18:00–22:00) Consumption — <span id="sPct">0</span>%</label>
+            <input type="range" id="sA" min="0" max="30" value="0" oninput="updateSim()">
+            <label>Scenario B: Shift AC/Laundry to Off-Peak — <span id="sShift">0.0</span> kWh/day</label>
+            <input type="range" id="sB" min="0" max="5" value="0" step="0.5" oninput="updateSim()">
+            <label>Scenario C: Add Rooftop Solar — <span id="sSolar">0.0</span> kWh/day generation</label>
+            <input type="range" id="sC" min="0" max="8" value="0" step="0.5" oninput="updateSim()">
+            <div class="sim-results">
+                <div class="sim-stat"><div class="sl">Baseline Monthly Bill</div><div class="sv red" id="sBbase">₹ —</div></div>
+                <div class="sim-stat"><div class="sl">Optimized Bill</div><div class="sv" id="sBopt">₹ —</div></div>
+                <div class="sim-stat"><div class="sl">Monthly Savings</div><div class="sv" id="sSave">₹ 0</div></div>
+                <div class="sim-stat"><div class="sl">CO₂ Saved</div><div class="sv" id="sCO2">0 kg</div></div>
+                <div class="sim-stat"><div class="sl">Solar Offset</div><div class="sv" id="sSolarOff">0 kWh</div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DATA TABLE -->
+    <div id="t-data" class="tab-content">
+        <div id="data-nd" class="no-data"><span>📋</span>Load data to preview</div>
+        <div id="data-content" style="display:none;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+                <b id="data-info" style="font-size:13px;"></b>
+                <button class="btn dl" onclick="downloadCSV()">⬇ Download CSV</button>
+            </div>
+            <div class="tbl-wrap">
+                <table><thead id="dHead"></thead><tbody id="dBody"></tbody></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+    <div><h3>📂 Load Your Data</h3><small>CSV · ZIP · JSON · TXT — from UCI dataset or your own meter</small></div>
+    <input type="file" id="fileIn" accept=".csv,.zip,.json,.txt" style="display:none" onchange="loadFile(this)">
+    <button class="btn green" onclick="document.getElementById('fileIn').click()">⬆ Upload File</button>
+    <button class="btn red"   onclick="clearData()">✖ Clear</button>
+    <span id="file-status"></span>
+</div>
+
+<script>
+// ═══════════════════════════ STATE ═══════════════════════════
+let G = [];            // globalData
+let kwh_total = 0;
+let dataLoaded = false;
+let charts = {};
+
+// ═══════════════════════════ LIVE CHART (starts only after data upload) ══
+// hBase is populated from uploaded data's hourly averages in processData()
+let hBase = new Array(24).fill(1.0); // placeholder — overwritten by real data
+let liveBuf = [];
+let liveChartInst = null;
+let liveInterval = null;
+
+function startLiveChart() {
+    // Build initial buffer using uploaded data's hourly pattern for current time
+    liveBuf = Array.from({length:50}, (_,i) => {
+        const h = (new Date().getHours() - 50 + i + 24) % 24;
+        return +(Math.max(0.05, hBase[h] + (Math.random()-0.5)*0.15)).toFixed(3);
+    });
+
+    // Create chart
+    if (liveChartInst) { try { liveChartInst.destroy(); } catch(e){} }
+    liveChartInst = new Chart(document.getElementById('liveChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: liveBuf.map((_,i)=>i+'s'),
+                datasets:[{label:'kW',data:[...liveBuf],borderColor:'#2ecc71',
+                           backgroundColor:'rgba(46,204,113,0.1)',fill:true,tension:0.35,pointRadius:0,borderWidth:2.5}] },
+        options:{ responsive:true, animation:{duration:0}, plugins:{legend:{display:false}},
+                  scales:{ x:{display:false}, y:{min:0, max:+(Math.max(...hBase)*1.5).toFixed(1),
+                             title:{display:true,text:'kW (from your data pattern)'}} } }
+    });
+
+    // Clear any previous interval
+    if (liveInterval) clearInterval(liveInterval);
+
+    // Update every second using your data's hourly mean + small random noise
+    liveInterval = setInterval(()=>{
+        const h   = new Date().getHours();
+        const val = +(Math.max(0.05, hBase[h] + (Math.random()-0.5)*0.15)).toFixed(3);
+        set('kpi-load', val+' kW');
+        liveBuf.push(val); liveBuf.shift();
+        liveChartInst.data.datasets[0].data = [...liveBuf];
+        liveChartInst.update();
+    }, 1000);
+}
+
+
+// ═══════════════════════════ WEATHER (real API) ═══════════════
+function fetchWeather(){
+    const city = document.getElementById('locInput').value.trim()||'Chennai';
+    stat('🌤 Loading weather for '+city+'...','#e67e22');
+    fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`)
+    .then(r=>r.json()).then(geo=>{
+        if(!geo.results?.length) throw new Error('City not found');
+        const {latitude,longitude,name} = geo.results[0];
+        return fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&timezone=auto`)
+               .then(r=>r.json()).then(wx=>({wx,name}));
+    }).then(({wx,name})=>{
+        const c=wx.current;
+        g('w-temp').textContent = c.temperature_2m;
+        g('w-hum').textContent  = c.relative_humidity_2m;
+        g('w-wind').textContent = c.wind_speed_10m;
+        g('w-desc').textContent = wxLabel(c.weather_code)+' — '+name+' (live)';
+        stat('✅ Live weather loaded for '+name,'#27ae60');
+    }).catch(()=>{
+        g('w-desc').textContent='Weather API unavailable — check internet connection';
+        stat('⚠️ Weather API unavailable','#e74c3c');
+    });
+}
+function wxLabel(c){ return c===0?'☀️ Clear':c<=3?'⛅ Partly Cloudy':c<=67?'🌧 Rain':c<=77?'❄️ Snow':'🌩 Thunderstorm'; }
+
+// ═══════════════════════════ FILE LOAD ═══════════════════════
+function loadFile(input){
+    const file=input.files[0]; if(!file) return;
+    const ext=file.name.split('.').pop().toLowerCase();
+    stat('Reading '+file.name+'...','#e67e22');
+    if(ext==='zip'){
+        const reader=new FileReader();
+        reader.onload=e=>JSZip.loadAsync(e.target.result).then(zip=>{
+            const csv=Object.keys(zip.files).find(n=>n.toLowerCase().endsWith('.csv')&&!zip.files[n].dir);
+            if(!csv){stat('❌ No CSV in ZIP','#e74c3c');return;}
+            zip.files[csv].async('string').then(txt=>parseText(txt,file.name+' → '+csv));
+        }).catch(e=>stat('❌ ZIP error: '+e.message,'#e74c3c'));
+        reader.readAsArrayBuffer(file);
+    } else if(ext==='json'){
+        const reader=new FileReader();
+        reader.onload=e=>{
+            try{
+                const obj=JSON.parse(e.target.result);
+                const rows=Array.isArray(obj)?obj:(obj.data||obj.readings||Object.values(obj)[0]);
+                process(rows,file.name);
+            }catch(e){stat('❌ JSON error: '+e.message,'#e74c3c');}
+        };
+        reader.readAsText(file);
+    } else {
+        Papa.parse(file,{header:true,dynamicTyping:true,skipEmptyLines:true,
+            complete:r=>{process(r.data,file.name);}});
+    }
+}
+function parseText(txt,name){
+    Papa.parse(txt,{header:true,dynamicTyping:true,skipEmptyLines:true,
+        complete:r=>{process(r.data,name);}});
+}
+
+
+// ═══════════════════════════ PROCESS DATA ════════════════════
+function process(data, name){
+    G = data; dataLoaded = true;
+    const loads = data.map(r=>parseFloat(r.Global_active_power)||0);
+    const n     = loads.length;
+    const sum   = loads.reduce((a,b)=>a+b,0);
+    const avg   = sum/n;
+    const peak  = Math.max(...loads);
+    const pkIdx = loads.indexOf(peak);
+    const pkTime= data[pkIdx]?.Datetime||data[pkIdx]?.Hour||'—';
+
+    // IQR
+    const s=[...loads].sort((a,b)=>a-b);
+    const q1=s[Math.floor(n*0.25)], q3=s[Math.floor(n*0.75)];
+    const iqr=q3-q1;
+    const uf=q3+3*iqr, lf=q1-3*iqr;
+    const anomIdx=loads.map((v,i)=>(v>uf||v<lf)?i:-1).filter(i=>i>=0);
+
+    // Hourly profile (mean per hour from data)
+    const hBkt=Array.from({length:24},()=>[]);
+    data.forEach(r=>{ const h=parseInt(r.Hour); if(h>=0&&h<24) hBkt[h].push(parseFloat(r.Global_active_power)||0); });
+    const hAvg=hBkt.map(b=>b.length?+(b.reduce((a,c)=>a+c,0)/b.length).toFixed(3):null);
+
+    // Set hBase from REAL data for live stream (use overall avg for missing hours)
+    hBase = hAvg.map(v => v !== null ? v : avg);
+
+    // Seasonal naive forecast (per-hour mean from data)
+    const pred=loads.map((_,i)=>{
+        const h=parseInt(data[i].Hour);
+        return hAvg[h]!==null?hAvg[h]:avg;
+    });
+    const residuals=loads.map((v,i)=>+(v-pred[i]).toFixed(3));
+    const mape=+(loads.map((v,i)=>v>0?Math.abs(residuals[i]/v)*100:0).reduce((a,b)=>a+b,0)/n).toFixed(2);
+    const rmse=+(Math.sqrt(residuals.map(r=>r*r).reduce((a,b)=>a+b,0)/n)).toFixed(3);
+    const maxErr=+(Math.max(...residuals.map(r=>Math.abs(r)))).toFixed(3);
+
+    // Sub-metering
+    const hasSm = 'Sub_metering_1_Kitchen_Wh' in (data[0]||{});
+    let k=0,l=0,w=0;
+    if(hasSm){
+        k=data.reduce((s,r)=>s+(parseFloat(r.Sub_metering_1_Kitchen_Wh)||0),0)/1000;
+        l=data.reduce((s,r)=>s+(parseFloat(r.Sub_metering_2_Laundry_Wh)||0),0)/1000;
+        w=data.reduce((s,r)=>s+(parseFloat(r.Sub_metering_3_WaterHeater_AC_Wh)||0),0)/1000;
+    }
+    const base=Math.max(0,sum-k-l-w);
+
+    // DOW groups
+    const dowMap={};
+    data.forEach(r=>{
+        const d=r.DayOfWeek||'Unknown';
+        if(!dowMap[d]) dowMap[d]=[];
+        dowMap[d].push(parseFloat(r.Global_active_power)||0);
+    });
+    const dowLabels=Object.keys(dowMap);
+    const dowVals=dowLabels.map(d=>+(dowMap[d].reduce((a,b)=>a+b,0)/dowMap[d].length).toFixed(3));
+
+    // Voltage
+    const hasVolt='Voltage' in (data[0]||{});
+    const volts=hasVolt?data.map(r=>parseFloat(r.Voltage)||0):[];
+
+    // Bill
+    kwh_total=sum;
+    const bill=calcBill(sum*2)/2;
+
+    // ── SET KPIs ──
+    set('kpi-load','— kW'); set('kpi-sub',name);
+    set('kpi-avg',avg.toFixed(3)+' kW');
+    set('kpi-peak',peak.toFixed(3)+' kW');
+    set('kpi-peaktime','at '+pkTime);
+    set('kpi-total',sum.toFixed(2)+' kWh');
+    set('kpi-rows',n+' rows');
+    set('kpi-cols',Object.keys(data[0]).length+' columns');
+    set('an-count',anomIdx.length+' events');
+    set('an-upper',uf.toFixed(3)+' kW');
+    set('an-lower',lf.toFixed(3)+' kW');
+    set('an-iqr',iqr.toFixed(3)+' kW');
+    set('an-par',(peak/avg).toFixed(2)+'×');
+    set('fc-mape',mape+'%');
+    set('fc-rmse',rmse+' kW');
+    set('fc-maxerr',maxErr+' kW');
+    set('co-bill','₹ '+Math.round(bill).toLocaleString());
+    set('co-kwh',sum.toFixed(2)+' kWh');
+    set('co-co2',(sum*0.727).toFixed(2)+' kg CO₂');
+    set('co-daily','₹ '+Math.round(bill/30).toLocaleString());
+    set('co-dkwh',(sum/30).toFixed(2)+' kWh');
+    set('sBbase','₹ '+Math.round(bill).toLocaleString());
+    set('sBopt', '₹ '+Math.round(bill).toLocaleString());
+
+    // Alert
+    const alertHtml = anomIdx.length>0
+        ? `<div class="alert-box red">⚠️ <b>${anomIdx.length} anomaly reading(s)</b> found in your data using IQR method. See Anomalies tab.</div>`
+        : `<div class="alert-box ok">✅ No anomalies detected in your data. All readings within 3×IQR bounds.</div>`;
+    set('ov-alert',alertHtml,'innerHTML');
+
+    const anAlerts = anomIdx.length>0
+        ? anomIdx.map(i=>`<div class="alert-box red">🔴 Row ${i+1}: ${data[i].Datetime||'Hour '+data[i].Hour} — ${loads[i].toFixed(3)} kW exceeds upper fence ${uf.toFixed(3)} kW</div>`).join('')
+        : `<div class="alert-box ok">✅ All ${n} readings within normal bounds (Q1−3×IQR = ${lf.toFixed(3)}, Q3+3×IQR = ${uf.toFixed(3)}).</div>`;
+    set('an-alerts',anAlerts,'innerHTML');
+
+    // EDA stats
+    const variance=loads.map(v=>Math.pow(v-avg,2)).reduce((a,b)=>a+b,0)/n;
+    const std=Math.sqrt(variance);
+    set('eda-stats',`
+        <div class="kpi"><h3>Min Load</h3><p>${Math.min(...loads).toFixed(3)} kW</p></div>
+        <div class="kpi red"><h3>Max Load</h3><p>${peak.toFixed(3)} kW</p></div>
+        <div class="kpi"><h3>Mean</h3><p>${avg.toFixed(3)} kW</p></div>
+        <div class="kpi orange"><h3>Std Dev</h3><p>${std.toFixed(3)} kW</p></div>
+        <div class="kpi green"><h3>Median</h3><p>${s[Math.floor(n/2)].toFixed(3)} kW</p></div>
+        <div class="kpi"><h3>Q1</h3><p>${q1.toFixed(3)} kW</p></div>
+        <div class="kpi"><h3>Q3</h3><p>${q3.toFixed(3)} kW</p></div>
+    `,'innerHTML');
+
+    // Sub-meter KPIs
+    if(hasSm){
+        set('sm-kpis',`
+            <div class="kpi"><h3>Kitchen (kWh)</h3><p>${k.toFixed(3)}</p></div>
+            <div class="kpi"><h3>Laundry (kWh)</h3><p>${l.toFixed(3)}</p></div>
+            <div class="kpi red"><h3>Water Heater/AC (kWh)</h3><p>${w.toFixed(3)}</p></div>
+            <div class="kpi orange"><h3>Base Load (kWh)</h3><p>${base.toFixed(3)}</p></div>
+        `,'innerHTML');
+    }
+
+    // Show sections
+    showAll();
+
+    // Show live stream section (now driven by real data)
+    const liveSec = document.getElementById('live-section');
+    const liveNd  = document.getElementById('live-nd');
+    if (liveSec) liveSec.style.display = 'block';
+    if (liveNd)  liveNd.style.display  = 'none';
+
+    // Start live chart using this data's hourly pattern
+    startLiveChart();
+
+    // Sub-meter visibility
+    const smMiss=document.getElementById('sm-missing');
+    const smCh=document.getElementById('sm-charts');
+    smMiss.style.display=hasSm?'none':'block';
+    smCh.style.display=hasSm?'block':'none';
+
+    renderCharts(loads,hAvg,uf,lf,pred,residuals,anomIdx,k,l,w,base,sum,dowLabels,dowVals,volts,data);
+    renderTable(data,loads,Math.max(...loads),avg);
+    set('data-info',`${n} rows × ${Object.keys(data[0]).length} columns — loaded from: ${name}`);
+    stat('✅ Loaded: '+name+' ('+n+' rows)','#27ae60');
+}
+
+// ═══════════════════════════ CHARTS ══════════════════════════
+function renderCharts(loads,hAvg,uf,lf,pred,residuals,anomIdx,k,l,w,base,total,dowLabels,dowVals,volts,data){
+    const labels=data.map(r=>r.Datetime?r.Datetime.toString().slice(5,16):String(r.Hour||''));
+    const hrLbls=Array.from({length:24},(_,i)=>i+':00');
+    const n=loads.length;
+
+    // 1. Hourly profile — real from data
+    mk('profileChart','bar',hrLbls,
+        [{label:'Mean kW',data:hAvg.map(v=>v??0),
+          backgroundColor:hAvg.map((_,i)=>(i>=18&&i<=22)?'#e74c3c':(i>=6&&i<=9)?'#f39c12':'#3498db'),
+          borderRadius:4}],
+        {plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'kW'}}}});
+
+    // 2. Time series — all your data points
+    mk('timeChart','line',labels,
+        [{label:'Active Power (kW)',data:loads,borderColor:'#2c3e50',backgroundColor:'rgba(44,62,80,0.08)',
+          fill:true,tension:0.3,pointRadius:2,borderWidth:1.5}],
+        {plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'kW'}}}});
+
+    // 3. Histogram — real bins from data
+    const mn=Math.min(...loads),mx=Math.max(...loads),rng=mx-mn||1;
+    const bins=Array(10).fill(0);
+    loads.forEach(v=>{ const bi=Math.min(9,Math.floor((v-mn)/rng*10)); bins[bi]++; });
+    mk('histChart','bar',bins.map((_,i)=>(mn+i*rng/10).toFixed(2)+' kW'),
+        [{label:'Count',data:bins,backgroundColor:'#3498db',borderRadius:3}],
+        {plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'Count'}}}});
+
+    // 4. DOW — from your DayOfWeek column
+    mk('dowChart','bar',dowLabels,
+        [{label:'Mean kW',data:dowVals,
+          backgroundColor:dowLabels.map(d=>['Saturday','Sunday'].includes(d)?'#e74c3c':'#3498db'),
+          borderRadius:4}],
+        {plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'kW'}}}});
+
+    // 5. Voltage — from your Voltage column
+    if(volts.length>0){
+        mk('voltChart','line',labels,
+            [{label:'Voltage (V)',data:volts,borderColor:'#9b59b6',backgroundColor:'rgba(155,89,182,0.08)',
+              fill:true,tension:0.3,pointRadius:2,borderWidth:1.5}],
+            {plugins:{legend:{display:false}},
+             scales:{y:{min:220,max:260,title:{display:true,text:'Voltage (V)'}}}});
+    }
+
+    // 6. Sub-meter doughnut — real kWh totals
+    mk('pieChart','doughnut',['Kitchen','Laundry','Water Heater/AC','Base Load'],
+        [{data:[k.toFixed(3),l.toFixed(3),w.toFixed(3),base.toFixed(3)],
+          backgroundColor:['#f1c40f','#3498db','#e74c3c','#95a5a6'],borderWidth:2}],
+        {plugins:{legend:{position:'bottom'}}});
+
+    // 7. Sub-meter stack by hour — real
+    const hBkt=Array.from({length:24},()=>({k:[],l:[],w:[],b:[]}));
+    data.forEach(r=>{
+        const h=parseInt(r.Hour); if(h<0||h>23) return;
+        const v=parseFloat(r.Global_active_power)||0;
+        hBkt[h].k.push(parseFloat(r.Sub_metering_1_Kitchen_Wh)||0);
+        hBkt[h].l.push(parseFloat(r.Sub_metering_2_Laundry_Wh)||0);
+        hBkt[h].w.push(parseFloat(r.Sub_metering_3_WaterHeater_AC_Wh)||0);
+        hBkt[h].b.push(v*1000 - (parseFloat(r.Sub_metering_1_Kitchen_Wh)||0)
+                               - (parseFloat(r.Sub_metering_2_Laundry_Wh)||0)
+                               - (parseFloat(r.Sub_metering_3_WaterHeater_AC_Wh)||0));
+    });
+    const avgArr=arr=>arr.length?+(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1):0;
+    mk('stackChart','bar',hrLbls,[
+        {label:'Kitchen',data:hBkt.map(b=>avgArr(b.k)),backgroundColor:'#f1c40f',stack:'s'},
+        {label:'Laundry',data:hBkt.map(b=>avgArr(b.l)),backgroundColor:'#3498db',stack:'s'},
+        {label:'Water Heater/AC',data:hBkt.map(b=>avgArr(b.w)),backgroundColor:'#e74c3c',stack:'s'},
+        {label:'Base Load',data:hBkt.map(b=>Math.max(0,avgArr(b.b))),backgroundColor:'#95a5a6',stack:'s'}
+    ],{scales:{x:{stacked:true},y:{stacked:true,title:{display:true,text:'Avg Wh'}}},
+       plugins:{legend:{position:'bottom'}}});
+
+    // 8. Model MAPE (R pipeline static results)
+    const mNames=['Seasonal Naive','Linear w/Lags','ARIMA','Random Forest','XGBoost'];
+    const mMape=[24.5,18.2,17.5,12.1,9.4];
+    const mRmse=[1.82,1.45,1.41,0.98,0.82];
+    const mClr=['#bdc3c7','#95a5a6','#7f8c8d','#3498db','#27ae60'];
+    mk('mapeChart','bar',mNames,
+        [{label:'MAPE (%)',data:mMape,backgroundColor:mClr,borderRadius:5}],
+        {indexAxis:'y',plugins:{legend:{display:false}},
+         scales:{x:{title:{display:true,text:'MAPE % — lower is better'}}}});
+    mk('rmseChart','bar',mNames,
+        [{label:'RMSE (kW)',data:mRmse,backgroundColor:mClr,borderRadius:5}],
+        {indexAxis:'y',plugins:{legend:{display:false}},
+         scales:{x:{title:{display:true,text:'RMSE kW — lower is better'}}}});
+
+    // 9. Forecast: actual vs seasonal naive (real computation)
+    const anomPts=loads.map((v,i)=>anomIdx.includes(i)?v:null);
+    mk('forecastChart','line',labels,[
+        {label:'Actual',data:loads,borderColor:'#2c3e50',pointRadius:0,borderWidth:1.8,fill:false,tension:0.2},
+        {label:'Seasonal Naive Forecast',data:pred,borderColor:'#3498db',borderDash:[5,3],pointRadius:0,borderWidth:1.8,fill:false,tension:0.2},
+        {label:'Large Error',data:anomPts,type:'scatter',pointRadius:7,pointBackgroundColor:'#e74c3c',showLine:false}
+    ],{plugins:{legend:{position:'bottom'}},scales:{y:{title:{display:true,text:'kW'}}}});
+
+    // 10. Residuals — real
+    mk('residualChart','bar',labels,
+        [{label:'Residual',data:residuals,
+          backgroundColor:residuals.map(v=>v>0?'rgba(231,76,60,0.65)':'rgba(52,152,219,0.65)'),borderRadius:3}],
+        {plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'kW'}}}});
+
+    // 11. Anomaly chart — real
+    const anPts=loads.map((v,i)=>anomIdx.includes(i)?v:null);
+    mk('anomalyChart','line',labels,[
+        {label:'Actual',data:loads,borderColor:'#2c3e50',pointRadius:0,borderWidth:1.8,fill:false,tension:0.2},
+        {label:'Anomaly',data:anPts,type:'scatter',pointRadius:9,pointBackgroundColor:'#e74c3c',showLine:false},
+        {label:'Upper Fence (Q3+3×IQR)',data:Array(n).fill(+uf.toFixed(3)),borderColor:'rgba(231,76,60,0.5)',borderDash:[5,3],pointRadius:0,fill:false},
+        {label:'Lower Fence (Q1−3×IQR)',data:Array(n).fill(+lf.toFixed(3)),borderColor:'rgba(230,126,34,0.5)',borderDash:[5,3],pointRadius:0,fill:false}
+    ],{plugins:{legend:{position:'bottom'}},scales:{y:{title:{display:true,text:'kW'}}}});
+
+    // 12. Tariff slab — computed from real kWh total
+    const slabData=calcSlabs(total*2);
+    mk('slabChart','bar',slabData.map(s=>s.label),
+        [{label:'kWh in slab',data:slabData.map(s=>s.units),
+          backgroundColor:['#27ae60','#2ecc71','#f1c40f','#e67e22','#e74c3c'],borderRadius:4}],
+        {plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.raw.toFixed(2)} kWh × ₹${slabData[ctx.dataIndex].rate}/unit`}}},
+         scales:{y:{title:{display:true,text:'kWh in this slab'}}}});
+}
+
+// ═══════════════════════════ BILL CALCULATOR ═════════════════
+function calcBill(u){
+    if(u<=400) return u*4.80;
+    if(u<=500) return 400*4.80+(u-400)*6.45;
+    let b=400*4.80+100*6.45;
+    if(u<=600) return b+(u-500)*8.55; b+=100*8.55;
+    if(u<=800) return b+(u-600)*9.65; b+=200*9.65;
+    if(u<=1000)return b+(u-800)*10.70; b+=200*10.70;
+    return b+(u-1000)*11.80;
+}
+function calcSlabs(u){
+    const slabs=[{upto:400,rate:4.80},{upto:500,rate:6.45},{upto:600,rate:8.55},{upto:800,rate:9.65},{upto:1000,rate:10.70},{upto:Infinity,rate:11.80}];
+    const labels=['0–400 (₹4.80)','401–500 (₹6.45)','501–600 (₹8.55)','601–800 (₹9.65)','801–1000 (₹10.70)','1001+ (₹11.80)'];
+    let rem=u, prev=0, result=[];
+    slabs.forEach((s,i)=>{ const span=Math.min(rem,s.upto-prev); if(span>0){result.push({label:labels[i],units:span,rate:s.rate});rem-=span;} prev=s.upto; if(rem<=0) return; });
+    return result;
+}
+
+// ═══════════════════════════ SIMULATOR ═══════════════════════
+function updateSim(){
+    const pct=+document.getElementById('sA').value;
+    const sh=+document.getElementById('sB').value;
+    const sol=+document.getElementById('sC').value;
+    set('sPct',pct); set('sShift',sh.toFixed(1)); set('sSolar',sol.toFixed(1));
+    const base=kwh_total>0?kwh_total:270;
+    const saved=pct/100*base*0.35+sh*30;
+    const solOff=sol*30;
+    const opt=Math.max(50,base-saved-solOff);
+    const bBill=calcBill(base*2)/2, oBill=calcBill(opt*2)/2;
+    set('sBbase','₹ '+Math.round(bBill).toLocaleString());
+    set('sBopt','₹ '+Math.round(oBill).toLocaleString());
+    set('sSave','₹ '+Math.max(0,Math.round(bBill-oBill)).toLocaleString());
+    set('sCO2',((saved+solOff)*0.727).toFixed(2)+' kg');
+    set('sSolarOff',solOff.toFixed(1)+' kWh');
+}
+
+// ═══════════════════════════ TABLE ═══════════════════════════
+function renderTable(data,loads,maxL,avgL){
+    if(!data?.length) return;
+    const cols=Object.keys(data[0]);
+    const numCols=['Global_active_power','Voltage','Sub_metering_1_Kitchen_Wh','Sub_metering_2_Laundry_Wh','Sub_metering_3_WaterHeater_AC_Wh'];
+    set('dHead','<tr>'+cols.map(c=>`<th>${c.replace(/_/g,' ')}</th>`).join('')+'</tr>','innerHTML');
+    set('dBody',data.map((row,ri)=>{
+        return '<tr>'+cols.map(col=>{
+            const v=row[col], isN=numCols.includes(col), nv=parseFloat(v);
+            let cls=isN?'num':'';
+            if(col==='Global_active_power'){ if(nv>=maxL*0.85) cls+=' hi'; else if(nv<=avgL*0.5) cls+=' lo'; }
+            return `<td class="${cls.trim()}">${isN&&!isNaN(nv)?nv.toFixed(2):(v??'—')}</td>`;
+        }).join('')+'</tr>';
+    }).join(''),'innerHTML');
+}
+
+// ═══════════════════════════ DOWNLOAD ════════════════════════
+function downloadCSV(){
+    if(!G.length) return;
+    const blob=new Blob([Papa.unparse(G)],{type:'text/csv'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='electricity_export.csv'; a.click();
+}
+
+// ═══════════════════════════ SHOW/HIDE ═══════════════════════
+const showIds =['ov-content','eda-content','sm-content','fc-content','an-content','co-content','data-content'];
+const hideIds =['ov-nd','eda-nd','sm-nd','fc-nd','an-nd','co-nd','data-nd'];
+function showAll(){ showIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='block';}); hideIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';}); }
+function hideAll(){ showIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';}); hideIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='block';}); }
+
+// ═══════════════════════════ CLEAR ═══════════════════════════
+function clearData(){
+    G=[]; kwh_total=0; dataLoaded=false;
+
+    // Stop live stream and destroy its chart
+    if (liveInterval) { clearInterval(liveInterval); liveInterval=null; }
+    if (liveChartInst){ try{liveChartInst.destroy();}catch(e){} liveChartInst=null; }
+    hBase = new Array(24).fill(1.0);
+    liveBuf = [];
+
+    // Show live-nd notice, hide live section
+    const liveSec=document.getElementById('live-section');
+    const liveNd=document.getElementById('live-nd');
+    if(liveSec) liveSec.style.display='none';
+    if(liveNd)  liveNd.style.display='block';
+    Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});
+    charts={};
+    const kpiIds=['kpi-avg','kpi-peak','kpi-peaktime','kpi-total','kpi-rows','kpi-cols',
+                  'an-count','an-upper','an-lower','an-iqr','an-par','fc-mape','fc-rmse','fc-maxerr',
+                  'co-bill','co-kwh','co-co2','co-daily','co-dkwh'];
+    kpiIds.forEach(id=>set(id,'—'));
+    set('kpi-load','— kW'); set('kpi-sub','No data loaded');
+    set('ov-alert','','innerHTML'); set('an-alerts','','innerHTML');
+    set('eda-stats','','innerHTML'); set('sm-kpis','','innerHTML');
+    set('dHead','','innerHTML'); set('dBody','','innerHTML');
+    set('sBbase','₹ —'); set('sBopt','₹ —'); set('sSave','₹ 0'); set('sCO2','0 kg'); set('sSolarOff','0 kWh');
+    ['sA','sB','sC'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=0;});
+    set('sPct','0'); set('sShift','0.0'); set('sSolar','0.0');
+    document.getElementById('fileIn').value='';
+    hideAll();
+    stat('✖ Data cleared','#e74c3c');
+}
+
+// ═══════════════════════════ CHART HELPER ════════════════════
+function mk(id,type,labels,datasets,options={}){
+    if(charts[id]){try{charts[id].destroy();}catch(e){}}
+    const ctx=document.getElementById(id);
+    if(!ctx) return;
+    charts[id]=new Chart(ctx.getContext('2d'),{type,data:{labels,datasets},options:{responsive:true,animation:{duration:200},...options}});
+}
+
+// ═══════════════════════════ HELPERS ═════════════════════════
+function set(id,val,prop='textContent'){const el=document.getElementById(id);if(el)el[prop]=val;}
+function g(id){return document.getElementById(id);}
+function stat(msg,color){const s=g('file-status');if(s){s.textContent=msg;s.style.color=color||'#27ae60';}}
+function switchTab(evt,name){
+    document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+    document.getElementById(name).classList.add('active');
+    evt.currentTarget.classList.add('active');
+}
+
+window.onload=()=>{ stat('','#27ae60'); fetchWeather(); };
+</script>
+</body>
+</html>

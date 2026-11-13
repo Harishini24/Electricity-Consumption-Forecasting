@@ -1,0 +1,17 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rapp.history
+data/raw/*
+data/processed/*
+outputs/models/*
+outputs/forecasts/*
+outputs/figures/*
+outputs/tables/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+!outputs/models/.gitkeep
+!outputs/forecasts/.gitkeep
+!outputs/figures/.gitkeep
+!outputs/tables/.gitkeep
